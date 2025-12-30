@@ -5,6 +5,8 @@ import org.example.libraryservice.book.Book;
 import org.example.libraryservice.book.BookRepository;
 import org.example.libraryservice.fine.FineService;
 import org.example.libraryservice.notification.NotificationService;
+import org.example.libraryservice.reservation.Reservation;
+import org.example.libraryservice.reservation.ReservationRepository;
 import org.example.libraryservice.user.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -22,8 +24,55 @@ public class RentalService {
     private final BookRepository bookRepository;     // Mongo
     private final FineService fineService;           // Postgres
     private final NotificationService notificationService;
+    private final org.example.libraryservice.reservation.ReservationRepository reservationRepository;
 
     @Transactional
+    public Rental requestBook(String bookId, User user) {
+
+        Book book = bookRepository.findById(bookId)
+                .orElseThrow(() -> new RuntimeException("Book not found"));
+
+        if (book.getAvailableCopies() <= 0) {
+            throw new RuntimeException("Book not available");
+        }
+
+        // Update Mongo
+        book.setAvailableCopies(book.getAvailableCopies() - 1);
+        bookRepository.save(book);
+
+        // Create Postgres record
+        Rental rental = new Rental();
+        rental.setUser(user);
+        rental.setBookId(book.getId());
+        rental.setRentalDate(Instant.now());
+        rental.setDueDate(LocalDate.now().plus(14, ChronoUnit.DAYS));
+
+        // 2. IMPORTANT: Status must be 'issued' (not 'requested')
+        rental.setStatus("issued");
+
+        // Denormalize data
+        rental.setBookTitle(book.getTitle());
+        rental.setBookAuthors(book.getAuthors());
+        rental.setBookGenre(book.getGenre());
+
+        Rental savedRental = rentalRepository.save(rental);
+
+        // 3. Your Reservation Closing Logic (This is perfect!)
+        List<org.example.libraryservice.reservation.Reservation> reservations =
+                reservationRepository.findByUserIdAndStatusOrderByReservationDateDesc(user.getId(), "active");
+
+        for (org.example.libraryservice.reservation.Reservation res : reservations) {
+            if (res.getBookId().equals(bookId)) {
+                res.setStatus("fulfilled"); // Mark as done
+                reservationRepository.save(res);
+                break;
+            }
+        }
+
+        notificationService.sendToUser(user, "rental-issued", savedRental);
+        return savedRental;
+    }
+
     public Rental issueBook(String bookId, User user) {
 
         Book book = bookRepository.findById(bookId)
@@ -52,18 +101,34 @@ public class RentalService {
 
         Rental savedRental = rentalRepository.save(rental);
 
-        notificationService.sendToUser(user, "rental-issued", savedRental);
+        // 4. Close the Reservation (Clean Version)
+        List<Reservation> reservations = reservationRepository
+                .findByUserIdAndStatusOrderByReservationDateDesc(user.getId(), "active");
+
+        for (Reservation res : reservations) {
+            // Check IDs safely (trim to ensure no whitespace issues)
+            if (res.getBookId().trim().equals(bookId.trim())) {
+                res.setStatus("fulfilled");
+                reservationRepository.save(res);
+                break; // Close only one reservation per issued book
+            }
+        }
+
+        // 5. Send Notification (Safe Mode)
+        try {
+            notificationService.sendToUser(user, "rental-issued", savedRental);
+        } catch (Exception e) {
+            System.err.println("WARNING: Notification failed, but book issued successfully: " + e.getMessage());
+        }
+
         return savedRental;
+
     }
 
     @Transactional
     public Rental returnBook(Long rentalId, User user) {
         Rental rental = rentalRepository.findById(rentalId)
                 .orElseThrow(() -> new RuntimeException("Rental not found"));
-
-        if (!rental.getUser().getId().equals(user.getId())) {
-            throw new SecurityException("User not authorized to return this rental");
-        }
 
         if (!rental.getStatus().equals("issued")) {
             throw new RuntimeException("Book has already been returned or processed");
@@ -72,31 +137,49 @@ public class RentalService {
         Book book = bookRepository.findById(rental.getBookId())
                 .orElseThrow(() -> new RuntimeException("Book not found"));
 
-        // 1. Update Mongo
+        // 1. Stock Update
         book.setAvailableCopies(book.getAvailableCopies() + 1);
         bookRepository.save(book);
 
-        // 2. Update Postgres record
+        // 2. Set Return Date
         rental.setReturnDate(Instant.now());
         LocalDate today = LocalDate.now();
 
+        // 👇 3. THIS IS THE MISSING LOGIC TO FILL YOUR DATABASE
         if (rental.getDueDate().isBefore(today)) {
+            // A. Mark as Overdue
             rental.setStatus("overdue");
-            // Create a fine
-            long daysOverdue = ChronoUnit.DAYS.between(rental.getDueDate(), today);
-            double fineAmount = daysOverdue * 10.0; // $10 per day, from original code
-            fineService.createFine(user, rental, fineAmount);
+
+            // B. Calculate Days Late
+            long daysOverdue = java.time.temporal.ChronoUnit.DAYS.between(rental.getDueDate(), today);
+
+            // C. Calculate Money ($5 per day - change amount as needed)
+            double fineAmount = daysOverdue * 5.0;
+
+            // D. SAVE THE FINE (This fills your empty table!)
+            // We use 'rental.getUser()' so the fine goes to the Student, not the Admin
+            fineService.createFine(rental.getUser(), rental, fineAmount);
+
+            System.out.println("DEBUG: Fine created: $" + fineAmount);
         } else {
             rental.setStatus("returned");
         }
 
+        // 4. Save Rental & Notify
         Rental updatedRental = rentalRepository.save(rental);
+        try {
+            notificationService.sendToUser(rental.getUser(), "rental-returned", updatedRental);
+        } catch (Exception e) {
+            // Ignore notification errors
+        }
 
-        notificationService.sendToUser(user, "rental-returned", updatedRental);
         return updatedRental;
     }
 
     public List<Rental> getUserRentalHistory(Long userId) {
         return rentalRepository.findByUserIdOrderByRentalDateDesc(userId);
+    }
+    public List<Rental> getAllIssuedBooks() {
+        return rentalRepository.findByStatus("issued");
     }
 }

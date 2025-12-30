@@ -5,6 +5,7 @@ import org.example.libraryservice.dto.RentalRequest;
 import org.example.libraryservice.user.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 import java.util.List;
@@ -39,5 +40,10 @@ public class ReservationController {
     @GetMapping("/user/active")
     public ResponseEntity<List<Reservation>> getActiveReservations(@AuthenticationPrincipal User user) {
         return ResponseEntity.ok(reservationService.getActiveUserReservations(user.getId()));
+    }
+    @PreAuthorize("hasRole('ADMIN')")
+    @GetMapping("/admin/active")
+    public ResponseEntity<List<Reservation>> getAllActiveReservations() {
+        return ResponseEntity.ok(reservationService.getAllActiveReservations());
     }
 }

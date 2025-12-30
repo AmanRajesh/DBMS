@@ -39,4 +39,7 @@ public class UserService {
     public List<User> findAllUsers() {
         return userRepository.findAll();
     }
+    public java.util.Optional<User> getUserById(Long id) {
+        return userRepository.findById(id);
+    }
 }

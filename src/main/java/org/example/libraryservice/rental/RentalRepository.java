@@ -11,7 +11,7 @@ public interface RentalRepository extends JpaRepository<Rental, Long> {
 
     // For /user/history
     List<Rental> findByUserIdOrderByRentalDateDesc(Long userId);
-
+    List<Rental> findByStatus(String status);
     // For /user/active (rentals that are not returned/overdue)
     List<Rental> findByUserIdAndStatus(Long userId, String status);
 

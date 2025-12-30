@@ -7,4 +7,5 @@ import java.util.List;
 public interface ReservationRepository extends JpaRepository<Reservation, Long> {
 
     List<Reservation> findByUserIdAndStatusOrderByReservationDateDesc(Long userId, String status);
+    List<Reservation> findByStatusOrderByReservationDateAsc(String status);
 }

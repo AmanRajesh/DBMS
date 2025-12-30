@@ -6,4 +6,5 @@ import lombok.Data;
 @Data
 public class RentalRequest {
     private String bookId;
+    private Long userId;
 }

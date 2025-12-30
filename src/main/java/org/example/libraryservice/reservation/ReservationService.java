@@ -53,4 +53,7 @@ public class ReservationService {
         // so the frontend will need to fetch book details separately.
         return reservationRepository.findByUserIdAndStatusOrderByReservationDateDesc(userId, "active");
     }
+    public List<Reservation> getAllActiveReservations() {
+        return reservationRepository.findByStatusOrderByReservationDateAsc("active");
+    }
 }
