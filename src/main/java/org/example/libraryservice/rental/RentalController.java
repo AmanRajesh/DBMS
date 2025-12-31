@@ -1,6 +1,7 @@
 // src/main/java/com/libraryservice/rental/RentalController.java
 package org.example.libraryservice.rental;
 
+import org.example.libraryservice.dto.RentalDto;
 import org.example.libraryservice.dto.RentalRequest;
 import org.example.libraryservice.user.User;
 import lombok.RequiredArgsConstructor;
@@ -64,7 +65,7 @@ public class RentalController {
     }
 
     @GetMapping("/user/history")
-    public ResponseEntity<List<Rental>> getUserHistory(@AuthenticationPrincipal User user) {
+    public ResponseEntity<List<RentalDto>> getUserHistory(@AuthenticationPrincipal User user) {
         return ResponseEntity.ok(rentalService.getUserRentalHistory(user.getId()));
     }
     @PreAuthorize("hasRole('ADMIN')")

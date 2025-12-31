@@ -1,7 +1,7 @@
-// src/main/java/com/libraryservice/reservation/ReservationController.java
 package org.example.libraryservice.reservation;
 
 import org.example.libraryservice.dto.RentalRequest;
+import org.example.libraryservice.dto.ReservationDto; // ✅ Import DTO
 import org.example.libraryservice.user.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
@@ -18,7 +18,7 @@ public class ReservationController {
 
     private final ReservationService reservationService;
 
-    // The original API used POST / with { book_id }
+    // ✅ KEPT EXACTLY AS IS (Preserves your POST body logic)
     @PostMapping
     public ResponseEntity<?> createReservation(@RequestBody RentalRequest request, @AuthenticationPrincipal User user) {
         try {
@@ -28,6 +28,7 @@ public class ReservationController {
         }
     }
 
+    // ✅ KEPT EXACTLY AS IS
     @PostMapping("/{reservationId}/cancel")
     public ResponseEntity<?> cancelReservation(@PathVariable Long reservationId, @AuthenticationPrincipal User user) {
         try {
@@ -37,10 +38,16 @@ public class ReservationController {
         }
     }
 
+    // 🔄 UPDATED THIS ONE ONLY
+    // We changed List<Reservation> -> List<ReservationDto> to fix "Unknown Title"
     @GetMapping("/user/active")
-    public ResponseEntity<List<Reservation>> getActiveReservations(@AuthenticationPrincipal User user) {
-        return ResponseEntity.ok(reservationService.getActiveUserReservations(user.getId()));
+    public ResponseEntity<List<ReservationDto>> getActiveReservations(@AuthenticationPrincipal User user) {
+        // We call 'getUserReservations' because that's the method we created
+        // in the Service that does the SQL+Mongo bridge to get the titles.
+        return ResponseEntity.ok(reservationService.getUserReservations(user.getId()));
     }
+
+    // ✅ KEPT EXACTLY AS IS
     @PreAuthorize("hasRole('ADMIN')")
     @GetMapping("/admin/active")
     public ResponseEntity<List<Reservation>> getAllActiveReservations() {
