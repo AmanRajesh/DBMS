@@ -130,7 +130,7 @@ public class RentalService {
         Rental rental = rentalRepository.findById(rentalId)
                 .orElseThrow(() -> new RuntimeException("Rental not found"));
 
-        if (!rental.getStatus().equals("issued")) {
+        if (!rental.getStatus().equals("issued") && !rental.getStatus().equals("overdue")) {
             throw new RuntimeException("Book has already been returned or processed");
         }
 
@@ -145,23 +145,18 @@ public class RentalService {
         rental.setReturnDate(Instant.now());
         LocalDate today = LocalDate.now();
 
-        // 👇 3. THIS IS THE MISSING LOGIC TO FILL YOUR DATABASE
+        // 3. Check for Fines
         if (rental.getDueDate().isBefore(today)) {
-            // A. Mark as Overdue
-            rental.setStatus("overdue");
-
-            // B. Calculate Days Late
+            // It IS late, so we create a fine...
             long daysOverdue = java.time.temporal.ChronoUnit.DAYS.between(rental.getDueDate(), today);
+            double fineAmount = daysOverdue * 5.0; // $5 per day
 
-            // C. Calculate Money ($5 per day - change amount as needed)
-            double fineAmount = daysOverdue * 5.0;
-
-            // D. SAVE THE FINE (This fills your empty table!)
-            // We use 'rental.getUser()' so the fine goes to the Student, not the Admin
             fineService.createFine(rental.getUser(), rental, fineAmount);
 
-            System.out.println("DEBUG: Fine created: $" + fineAmount);
+            // ...BUT we still mark the rental as 'returned' because the book is back!
+            rental.setStatus("returned");
         } else {
+            // On time
             rental.setStatus("returned");
         }
 
@@ -170,7 +165,7 @@ public class RentalService {
         try {
             notificationService.sendToUser(rental.getUser(), "rental-returned", updatedRental);
         } catch (Exception e) {
-            // Ignore notification errors
+            // ignore notification errors
         }
 
         return updatedRental;

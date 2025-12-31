@@ -23,4 +23,13 @@ public class Book {
     private List<String> tags;
     private boolean isAvailable = true;
     private Instant createdAt = Instant.now();
+    private String imageUrl;
+
+    public String getImageUrl() {
+        return imageUrl;
+    }
+
+    public void setImageUrl(String imageUrl) {
+        this.imageUrl = imageUrl;
+    }
 }

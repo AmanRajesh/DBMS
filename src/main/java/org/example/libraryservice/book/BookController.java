@@ -2,6 +2,7 @@
 package org.example.libraryservice.book;
 
 import lombok.RequiredArgsConstructor;
+import org.example.libraryservice.dto.BookDto;
 import org.springframework.data.domain.Page;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
@@ -48,11 +49,13 @@ public class BookController {
     // Maps to routes/search.js
     @GetMapping("/search")
     public ResponseEntity<?> searchBooks(@RequestParam String query) {
-        List<Book> results = bookService.searchBooks(query);
-        // Match original API response
-        return ResponseEntity.ok(Map.of(
-                "results", results,
-                "count", results.size()
-        ));
+
+        return ResponseEntity.ok(bookService.smartSearch(query));
+    }
+    @PostMapping
+    public ResponseEntity<Book> createBook(@RequestBody BookDto request) {
+        // We pass the DTO directly to the service.
+        // The service handles converting DTO -> Entity and saving the Image URL.
+        return ResponseEntity.ok(bookService.addBook(request));
     }
 }

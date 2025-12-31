@@ -29,4 +29,6 @@ public interface RentalRepository extends JpaRepository<Rental, Long> {
     @Query("SELECT COUNT(r) as totalRentals, AVG((EXTRACT(EPOCH FROM r.returnDate) - EXTRACT(EPOCH FROM r.rentalDate)) / 86400.0) as avgDuration " +
             "FROM Rental r WHERE r.returnDate IS NOT NULL")
     Map<String, Object> findUserPatterns();
+
+    List<Rental> findByUserId(Long userId);
 }

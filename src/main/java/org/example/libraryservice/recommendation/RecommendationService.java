@@ -1,61 +1,78 @@
-// src/main/java/com/libraryservice/recommendation/RecommendationService.java
 package org.example.libraryservice.recommendation;
 
 import org.example.libraryservice.book.Book;
 import org.example.libraryservice.book.BookRepository;
+import org.example.libraryservice.nlp.NLPService;
 import org.example.libraryservice.rental.Rental;
 import org.example.libraryservice.rental.RentalRepository;
-import org.example.libraryservice.user.User;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import java.util.List;
-import java.util.Map;
+
+import java.util.*;
+import java.util.function.Function;
 import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
 public class RecommendationService {
 
-    private final RentalRepository rentalRepository; // Postgres
-    private final BookRepository bookRepository;     // Mongo
+    private final RentalRepository rentalRepository;
+    private final BookRepository bookRepository;
+    private final NLPService nlpService;
 
-    public Map<String, Object> getRecommendations(User user) {
+    public List<Book> getRecommendations(Long userId) {
+        // 1. Get User's Rental History
+        List<Rental> history = rentalRepository.findByUserId(userId);
 
-        // 1. Get user's borrowing history (from Postgres)
-        List<Rental> userHistory = rentalRepository.findByUserIdOrderByRentalDateDesc(user.getId());
-
-        // 2. Get unique genres from history
-        List<String> genres = userHistory.stream()
-                .map(Rental::getBookGenre)
-                .distinct()
-                .limit(5) // Match original query
-                .collect(Collectors.toList());
-
-        if (genres.isEmpty()) {
-            // 3. No history? Return trending books (from Mongo)
-            List<Book> trending = bookRepository.findTop10ByOrderByCreatedAtDesc();
-            return Map.of(
-                    "recommendations", trending,
-                    "reason", "trending"
-            );
+        // If user is new (no history), return empty list (or could return 'Popular Books')
+        if (history.isEmpty()) {
+            return new ArrayList<>();
         }
 
-        // 4. Get recommendations based on genres (from Mongo)
-        List<Book> recommendations = bookRepository.findByGenreIn(genres);
-
-        // 5. Filter out books user has already rented
-        List<String> rentedBookIds = userHistory.stream()
+        // 2. Fetch details of the books they read
+        Set<String> readBookIds = history.stream()
                 .map(Rental::getBookId)
-                .collect(Collectors.toList());
+                .collect(Collectors.toSet());
+        List<Book> readBooks = bookRepository.findAllById(readBookIds);
 
-        List<Book> finalRecs = recommendations.stream()
-                .filter(book -> !rentedBookIds.contains(book.getId()))
-                .limit(10)
-                .collect(Collectors.toList());
+        // 3. Build a "Corpus" (One giant string of everything they read)
+        StringBuilder corpus = new StringBuilder();
+        for (Book book : readBooks) {
+            corpus.append(book.getTitle()).append(" ");
+            corpus.append(book.getGenre()).append(" ");
+            corpus.append(book.getDescription()).append(" ");
+        }
 
-        return Map.of(
-                "recommendations", finalRecs,
-                "reason", "genre_similarity"
-        );
+        // 4. Use AI to extract Interests (Keywords)
+        List<String> allKeywords = nlpService.extractKeywords(corpus.toString());
+
+        // 5. Find the "Top 5" most frequent keywords
+        // (e.g. if they read 3 space books, "space" appears 3 times -> High priority)
+        List<String> topKeywords = getTopKeywords(allKeywords, 5);
+        System.out.println("DEBUG: User " + userId + " Interests: " + topKeywords);
+
+        // 6. Search for new books matching these keywords
+        Set<Book> recommendations = new HashSet<>();
+        for (String keyword : topKeywords) {
+            // Re-use the smart search query we made yesterday
+            recommendations.addAll(bookRepository.searchByKeyword(keyword));
+        }
+
+        // 7. Filter: Remove books they have ALREADY read
+        return recommendations.stream()
+                .filter(book -> !readBookIds.contains(book.getId())) // Remove read books
+                .limit(10) // Limit to 10 suggestions
+                .collect(Collectors.toList());
+    }
+
+    // Helper: Sorts words by frequency (High to Low)
+    private List<String> getTopKeywords(List<String> keywords, int limit) {
+        return keywords.stream()
+                .collect(Collectors.groupingBy(Function.identity(), Collectors.counting())) // Count frequency
+                .entrySet().stream()
+                .sorted(Map.Entry.<String, Long>comparingByValue().reversed()) // Sort Descending
+                .limit(limit)
+                .map(Map.Entry::getKey)
+                .collect(Collectors.toList());
     }
 }
